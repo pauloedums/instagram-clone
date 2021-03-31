@@ -1,156 +1,158 @@
-var express = require('express'), 
-    bodyParser = require('body-parser'), 
+var express = require('express'),
+    bodyParser = require('body-parser'),
     multiparty = require('connect-multiparty'),
     mongodb = require('mongodb'),
-    objectId = require('mongodb').ObjectId,
-    fs = require('fs');
+    objectId = require('mongodb').ObjectID,
+    fs = require('fs'),
+    fsx = require('fs-extra');
 
+var app = express();
 
-    var app = express();
+// body-parser
+app.use(bodyParser.urlencoded({extended:true}));
+app.use(bodyParser.json());
+app.use(multiparty());
 
-    app.use(bodyParser.urlencoded({extended:true}));
-    app.use(bodyParser.json());
-    app.use(multiparty());
+var port = 8080;
 
-    var port = 8080;
-    app.listen(port);
+app.listen(port);
 
-    var db = new mongodb.Db(
-        'instagram',
-        new mongodb.Server('localhost', 27017, {}),
-        {}
-    )
+var db = new mongodb.Db(
+    'instagram',
+    new mongodb.Server('localhost',27017,{}),
+    {}
+);
 
-    console.log('Servidor HTTP esta escutando na porta ' + port);
+console.log('Servidor HTTP esta escutando na porta ' + port);
 
-    app.get('/', (req, res) => {
-      res.send({ msg: 'Olá'});
-    });
+app.get('/', function(req, res){
+    res.send({msg:'Olá'});
+});
 
-// CREATE
-app.post('/api', (req, res) => {
+// POST(create)
+app.post('/api', function(req, res){
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader("Access-Control-Allow-Origin", "*");
 
     var date = new Date();
+    var time_stamp = date.getTime();
 
-    var timestamp = date.getTime();
-
+    var url_imagem = time_stamp + '_' + req.files.arquivo.originalFilename;
     var path_origem = req.files.arquivo.path;
+    var path_destino = './uploads/' + url_imagem;
 
-    var url_image = timestamp + '_' + req.files.arquivo.originalFilename;
-
-    var path_destino = './uploads' + url_image;
-
-
-    fs.rename(path_origem, path_destino, (err) => {
-        if(err) {
-            res.status(500).json({ error: err})
+    fsx.move(path_origem, path_destino, function(err){
+        if(err){
+            res.status(500).json({ error : err });
             return;
         }
 
         var dados = {
-            url_imagem: url_image,
+            url_imagem: url_imagem,
             titulo: req.body.titulo
-        };
+        }
 
-        db.open((err, mongoclient) => {
-            mongoclient.collection('postagens', (err, collection) => {
-                collection.insert(dados, (err, records) => {
-                    if(err) {
+        db.open(function(err, mongoclient){
+            mongoclient.collection('postagens', function(err, collection){
+                collection.insert(dados, function(err, records){
+                    if(err){
                         res.json({'status': 'erro'});
-                    }else {
-                        res.json({'status': 'inclusão realizada com sucesso'});
+                    }else{
+                        res.json({'status': 'inclusao realizada com sucesso'});
                     }
                     mongoclient.close();
-                })
-            })
+                });
+            });
         });
-    });
-    
-    
-})
 
-// GET
-app.get('/api', (req, res) => {        
-    db.open((err, mongoclient) => {
-        mongoclient.collection('postagens', (err, collection) => {
-        collection.find().toArray((err, results) => {
-            if(err) {
-                res.json(err);
-            } else{
-                res.json(results);
-            }
-            mongoclient.close();
-        })
-        })
-    });
-})
-
-// GET - BY ID
-app.get('/api/:id', (req, res) => {
-    db.open((err, mongoclient) => {
-        mongoclient.collection('postagens', (err, collection) => {
-            collection.find(objectId(req.params.id)).toArray((err, results) => {
-            if(err) {
-                res.json(err);
-                } else{
-                    res.status(200).json(results);
-                }
-                mongoclient.close();
-            })
-        })
     });
 });
 
+// GET(ready)
+app.get('/api', function(req, res){
 
-
-// UPDATE BY ID
-app.put('/api/:id', (req, res) => {
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-
-    var dados = req.body;
+    res.setHeader("Access-Control-Allow-Origin", "*");
     
-    db.open((err, mongoclient) => {
-        mongoclient.collection('postagens', (err, collection) => {
+    db.open(function(err, mongoclient){
+        mongoclient.collection('postagens', function(err, collection){
+            collection.find().toArray(function(err, results){
+                if(err){
+                    res.json(err);
+                }else{
+                    res.json(results);
+                }
+                mongoclient.close();
+            });
+        });
+    });
+});
+
+// GET by ID(ready)
+app.get('/api/:id', function(req, res){
+    db.open(function(err, mongoclient){
+        mongoclient.collection('postagens', function(err, collection){
+            collection.find(objectId(req.params.id)).toArray(function(err, results){
+                if(err){
+                    res.json(err);
+                }else{
+                    res.status(200).json(results);
+                }
+                mongoclient.close();
+            });
+        });
+    });
+});
+
+app.get('/imagens/:imagem', (req, res) => {
+    var img = req.params.imagem;
+
+    fs.readFile('./uploads/' + img, (err, content) => {
+        if(err) {
+            res.status(400).json(err);
+            return;
+        }
+
+        res.writeHead(200, { 'Content-type': 'image/jpg' });
+        res.end(content);
+    })
+});
+
+// PUT by ID(update)
+app.put('/api/:id', function(req, res){
+    db.open(function(err, mongoclient){
+        mongoclient.collection('postagens', function(err, collection){
             collection.update(
-                { _id: objectId(req.params.id) },
-                { $set: {titulo: req.body.titulo }},
+                { _id : objectId(req.params.id) },
+                { $set : { titulo : req.body.titulo }},
                 {},
-                (err, records) => {
-                    if(err) {
+                function(err, records){
+                    if(err){
                         res.json(err);
-                    } else {
+                    }else{
                         res.json(records);
                     }
                     mongoclient.close();
                 }
             );
-        })
+        });
     });
-})
+});
 
-// DELETE BY ID
-app.delete('/api/:id', (req, res) => {
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-
-    var dados = req.body;
-    
-    db.open((err, mongoclient) => {
-        mongoclient.collection('postagens', (err, collection) => {
+// DELETE by ID(delete)
+app.delete('/api/:id', function(req, res){
+    db.open(function(err, mongoclient){
+        mongoclient.collection('postagens', function(err, collection){
             collection.remove(
-                { _id: objectId(req.params.id) },
-                (err, records) => {
-                    if(err) {
+                { _id : objectId(req.params.id) },
+                function(err, records){
+                    if(err){
                         res.json(err);
-                    } else {
+                    }else{
                         res.json(records);
                     }
-                    mongoclient.close(); 
-                }
+                    mongoclient.close();
+                }  
             );
-        })
+        });
     });
 });
